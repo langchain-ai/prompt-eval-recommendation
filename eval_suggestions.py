@@ -335,8 +335,11 @@ async def suggest_evals(
 
         # Look for the evals in the response as any instance of ```python ```
         # pattern = r"```python(.*?)```"
-        pattern = r"```python\s+(.*?def.*?)(?=\n```)"  # match any def
-        matches = re.findall(pattern, eval_response_content, re.DOTALL)
+        # pattern = r"```python\s+(.*?def.*?)(?=\n```)"  # match any def
+        pattern = r"^\s*```python\s+(.*?def.*?)(?=\n\s*```)"  # match any def with leading whitespace
+        matches = re.findall(
+            pattern, eval_response_content, re.DOTALL | re.MULTILINE
+        )
 
         # Get longest match
         for match in matches:

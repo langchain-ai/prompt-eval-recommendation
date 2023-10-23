@@ -4,7 +4,7 @@ from langchain.callbacks.manager import collect_runs
 from langchain.prompts import BasePromptTemplate
 from langsmith import Client
 from streamlit_feedback import streamlit_feedback
-from eval_suggestions_azure import suggest_evals
+from eval_suggestions import suggest_evals
 from langchain import hub
 from langchainhub import Client as HubClient
 import asyncio
@@ -180,7 +180,7 @@ if versions:
 
     if st.session_state.get("run_id"):
         # Show full message history
-        with st.expander("Full message history", expanded=False):
+        with st.expander("GPT-4 message history", expanded=False):
             # Get the "assistant" messages
             st.write(
                 "Here are the full GPT-4 responses to (1) categorize the prompt additions and (2) generate evaluation functions."
