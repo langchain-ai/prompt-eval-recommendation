@@ -31,7 +31,46 @@ def list_versions(repo_full_name: str):
     ]
     return [hash[:7] for hash in hashes]
 
+feedback_key = f"feedback_{st.session_state.get('run_id')}"
 
+def on_feedback_submit(feedback, run_id):
+    # Define score mappings for both "thumbs" and "faces" feedback systems
+    score_mappings = {
+        "thumbs": {"👍": 1, "👎": 0},
+        "faces": {"😀": 1, "🙂": 0.75, "😐": 0.5, "🙁": 0.25, "😞": 0},
+    }
+
+    # Get the score mapping based on the selected feedback option
+    scores = score_mappings[feedback_option]
+
+    if feedback:
+        # Get the score from the selected feedback option's score mapping
+        score = scores.get(feedback["score"])
+
+        if score is not None:
+            print("score", score)
+            # Formulate feedback type string incorporating the feedback option
+            # and score value
+            feedback_type_str = f"{feedback_option} {feedback['score']}"
+
+            # Record the feedback with the formulated feedback type string
+            # and optional comment
+            feedback_record = client.create_feedback(
+                run_id,
+                feedback_type_str,
+                score=score,
+                comment=feedback.get("text"),
+            )
+            print("Feedback recorded!", feedback_record)
+            st.session_state.feedback = {
+                "feedback_id": str(feedback_record.id),
+                "score": score,
+            }
+        else:
+            st.warning("Invalid feedback score.")
+            
+if feedback_key in st.session_state:
+    on_feedback_submit(st.session_state[feedback_key], st.session_state.run_id)
 if option == "Prompt Template":
     string1 = st.text_area("Template", "", placeholder="Hello, {input}!")
     if string1.strip():
@@ -111,43 +150,14 @@ if versions:
             )
         st.session_state.run_id = cb.traced_runs[0].id
 
-if st.session_state.get("run_id"):
-    run_id = st.session_state.run_id
-    feedback = streamlit_feedback(
-        feedback_type=feedback_option,
-        optional_text_label="[Optional] Please provide an explanation",
-        key=f"feedback_{run_id}",
-    )
-
-    # Define score mappings for both "thumbs" and "faces" feedback systems
-    score_mappings = {
-        "thumbs": {"👍": 1, "👎": 0},
-        "faces": {"😀": 1, "🙂": 0.75, "😐": 0.5, "🙁": 0.25, "😞": 0},
-    }
-
-    # Get the score mapping based on the selected feedback option
-    scores = score_mappings[feedback_option]
-
-    if feedback:
-        # Get the score from the selected feedback option's score mapping
-        score = scores.get(feedback["score"])
-
-        if score is not None:
-            # Formulate feedback type string incorporating the feedback option
-            # and score value
-            feedback_type_str = f"{feedback_option} {feedback['score']}"
-
-            # Record the feedback with the formulated feedback type string
-            # and optional comment
-            feedback_record = client.create_feedback(
-                run_id,
-                feedback_type_str,
-                score=score,
-                comment=feedback.get("text"),
-            )
-            st.session_state.feedback = {
-                "feedback_id": str(feedback_record.id),
-                "score": score,
-            }
-        else:
-            st.warning("Invalid feedback score.")
+    if st.session_state.get("run_id"):
+        run_id = st.session_state.run_id
+        
+        feedback = streamlit_feedback(
+            feedback_type=feedback_option,
+            optional_text_label="[Optional] Please provide an explanation",
+            key=f"feedback_{run_id}",
+            on_submit=on_feedback_submit,
+        )
+        print("Feedback called", feedback)
+        
