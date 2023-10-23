@@ -26,7 +26,9 @@ def show_diff(template_1: str, template_2: str):
 
 
 def show_readable_diff(template_1: str, template_2: str):
-    diff = list(difflib.ndiff(template_1.splitlines(), template_2.splitlines()))
+    diff = list(
+        difflib.ndiff(template_1.splitlines(), template_2.splitlines())
+    )
 
     # Processing the diff list for readable format
     added_lines = []
@@ -78,8 +80,8 @@ First, analyze the given templates and categorize the new additions to the promp
 
 - **Content**:
   - **Count**: Did I add any new specifications regarding the number of items of some type in the response, like "at least", "at most", or an exact count?
-  - **Inclusion**: Did I add any new phrases or ideas to the prompt that should explicitly be included in every response?
-  - **Exclusion**: Did I specify any new phrases or ideas that should be omitted from every response?
+  - **Inclusion**: Did I add any new phrases or ideas to the prompt that every future LLM response should include?
+  - **Exclusion**: Did I specify any new phrases or ideas that every future LLM response should exclude?
   - **Scorecard Items**: Did I add any new qualitative criteria of good responses, such as a specific length, tone, or style?
 
 **Expected Output Structure**:
@@ -212,7 +214,8 @@ async def suggest_evals(
 ):
     """Suggest evals for the user to run based on prompt deltas."""
     with trace_as_chain_group(
-        "suggest_evals", inputs={"template_1": template_1, "template_2": template_2}
+        "suggest_evals",
+        inputs={"template_1": template_1, "template_2": template_2},
     ) as cb:
         # If the templates are the same, return []
         if template_1 == template_2:
@@ -241,10 +244,7 @@ async def suggest_evals(
         # First characterize the deltas
         try:
             lc_messages = convert_openai_messages(messages)
-            char_response = llm.astream(
-                lc_messages,
-                {"callbacks": cb}
-            )
+            char_response = llm.astream(lc_messages, {"callbacks": cb})
 
             logging.debug("Determining prompt deltas...")
             collected_messages = []
@@ -321,10 +321,7 @@ async def suggest_evals(
         )
         logging.debug("Generating evals...")
         lc_messages = convert_openai_messages(messages)
-        eval_response_stream = llm.astream(
-            lc_messages,
-            {"callbacks": cb}
-        )
+        eval_response_stream = llm.astream(lc_messages, {"callbacks": cb})
         eval_response = []
         async for chunk in eval_response_stream:
             if eval_prediction_callback:
@@ -332,29 +329,39 @@ async def suggest_evals(
             eval_response.append(chunk.content)
         eval_prediction_callback(None)
         eval_response_content = "".join(eval_response)
+        messages.append(
+            {"content": eval_response_content, "role": "assistant"}
+        )
+
         # Look for the evals in the response as any instance of ```python ```
         # pattern = r"```python(.*?)```"
         pattern = r"```python\s+(.*?def.*?)(?=\n```)"  # match any def
         matches = re.findall(pattern, eval_response_content, re.DOTALL)
 
         # Get longest match
-        if matches:
-            match = matches[-1].strip()
+        for match in matches:
+            match = match.strip()
 
             try:
                 # Replace `ask_expert` with a call to an llm function
                 needs_llm = False
                 function_str = match
                 if "ask_expert" in function_str:
-                    function_str = function_str.replace("ask_expert", "ask_llm")
+                    function_str = function_str.replace(
+                        "ask_expert", "ask_llm"
+                    )
                     needs_llm = True
 
                 # Add the function to the list of eval functions
-                eval_functions.append({"code": function_str, "needs_llm": needs_llm})
+                eval_functions.append(
+                    {"code": function_str, "needs_llm": needs_llm}
+                )
 
             except:
                 logging.error(f"Error parsing code: {match}")
-        cb.on_chain_end({"eval_functions": eval_functions, "messages": messages})
+        cb.on_chain_end(
+            {"eval_functions": eval_functions, "messages": messages}
+        )
         return eval_functions, messages
 
 
