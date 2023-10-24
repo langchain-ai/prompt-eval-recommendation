@@ -189,39 +189,36 @@ if versions:
 
         run_id = st.session_state.run_id
 
-if st.session_state.get("run_id"):
-    run_id = st.session_state.run_id
-
-    feedback = streamlit_feedback(
-        feedback_type=feedback_option,
-        optional_text_label="[Optional] Please provide an explanation",
-        key=f"feedback_{run_id}",
-        on_submit=on_feedback_submit,
-    )
-    print("Feedback called")
-
-    # Show CTA
-    with st.form("email_for_study_form"):
-        st.write(
-            "This is an experimental version of the tool, built in collaboration with UC Berkeley. If you'd like to participate in an interactive prompt engineering study so we can improve the tool, please enter your email below. We will not use your email for any other purpose. For more questions, please contact Shreya Shankar at shreyashankar@berkeley.edu."
+        feedback = streamlit_feedback(
+            feedback_type=feedback_option,
+            optional_text_label="[Optional] Please provide an explanation",
+            key=f"feedback_{run_id}",
+            on_submit=on_feedback_submit,
         )
-        email_address = st.text_input("Email", key="email_address")
-        email_submitted = st.form_submit_button("Submit")
+        print("Feedback called")
 
-        if email_submitted:
-            if email_address:
-                # Log the email address
-                email_type_str = "email"
-                email_feedback_record = client.create_feedback(
-                    run_id,
-                    email_type_str,
-                    comment=email_address,
-                )
-                st.session_state.email_feedback = {
-                    "feedback_id": str(email_feedback_record.id),
-                    "email_address": email_address,
-                }
+        # Show CTA
+        with st.form("email_for_study_form"):
+            st.write(
+                "This is an experimental version of the tool, built in collaboration with UC Berkeley. If you'd like to participate in an interactive prompt engineering study so we can improve the tool, please enter your email below. We will not use your email for any other purpose. For more questions, please contact Shreya Shankar at shreyashankar@berkeley.edu."
+            )
+            email_address = st.text_input("Email", key="email_address")
+            email_submitted = st.form_submit_button("Submit")
 
-                st.success("Thanks for your interest! We'll be in touch.")
-            else:
-                st.warning("Please enter an email address.")
+            if email_submitted:
+                if email_address:
+                    # Log the email address
+                    email_type_str = "email"
+                    email_feedback_record = client.create_feedback(
+                        run_id,
+                        email_type_str,
+                        comment=email_address,
+                    )
+                    st.session_state.email_feedback = {
+                        "feedback_id": str(email_feedback_record.id),
+                        "email_address": email_address,
+                    }
+
+                    st.success("Thanks for your interest! We'll be in touch.")
+                else:
+                    st.warning("Please enter an email address.")
