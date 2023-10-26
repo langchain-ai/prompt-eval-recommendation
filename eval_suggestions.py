@@ -11,13 +11,25 @@ from dotenv import load_dotenv
 import logging
 import re
 from langchain.adapters.openai import convert_openai_messages
-from langchain.chat_models import ChatOpenAI
+from langchain.chat_models import ChatOpenAI, AzureChatOpenAI
 from langchain.callbacks.manager import trace_as_chain_group
 
 llm = ChatOpenAI(model="gpt-4")
 
-
 load_dotenv()
+
+# import os
+
+# BASE_URL = os.getenv("AZURE_API_BASE")
+# API_KEY = os.getenv("AZURE_API_KEY")
+# DEPLOYMENT_NAME = "gpt-4"
+# llm = AzureChatOpenAI(
+#     openai_api_base=BASE_URL,
+#     openai_api_version=os.getenv("AZURE_API_VERSION"),
+#     deployment_name=DEPLOYMENT_NAME,
+#     openai_api_key=API_KEY,
+#     openai_api_type="azure",
+# )
 
 
 def show_diff(template_1: str, template_2: str):
@@ -26,7 +38,9 @@ def show_diff(template_1: str, template_2: str):
 
 
 def show_readable_diff(template_1: str, template_2: str):
-    diff = list(difflib.ndiff(template_1.splitlines(), template_2.splitlines()))
+    diff = list(
+        difflib.ndiff(template_1.splitlines(), template_2.splitlines())
+    )
 
     # Processing the diff list for readable format
     added_lines = []
@@ -53,12 +67,12 @@ def show_readable_diff(template_1: str, template_2: str):
 
 CATEGORIZE_TEMPLATE = """I need your assistance in identifying any new instructions I've added to my prompt. The new instructions will help inform the creation of new evaluation functions for future responses to my prompt.
 
-**Prompt Template 1**: 
+**First Prompt Template**: 
 ```
 {template_1}
 ```
 
-**Prompt Template 2**:
+**Second Prompt Template**:
 ```
 {template_2}
 ```
@@ -78,8 +92,8 @@ First, analyze the given templates and categorize the new additions to the promp
 
 - **Content**:
   - **Count**: Did I add any new specifications regarding the number of items of some type in the response, like "at least", "at most", or an exact count?
-  - **Inclusion**: Did I add any new phrases or ideas to the prompt that should explicitly be included in every response?
-  - **Exclusion**: Did I specify any new phrases or ideas that should be omitted from every response?
+  - **Inclusion**: Did I add any new phrases or ideas to the prompt that every future LLM response should include?
+  - **Exclusion**: Did I specify any new phrases or ideas that every future LLM response should exclude?
   - **Scorecard Items**: Did I add any new qualitative criteria of good responses, such as a specific length, tone, or style?
 
 **Expected Output Structure**:
@@ -101,18 +115,19 @@ First, analyze the given templates and categorize the new additions to the promp
 }}
 ```
 
-Fill out the structure based on your analysis. For categories without changes, indicate "No change"."""
+Fill out the structure based on your analysis. For categories without changes, indicate "No change". Don't mention any Python functions yet."""
 
 SUGGEST_EVAL_TEMPLATE = """Using the JSON output detailing the new instructions I added to the LLM prompt, design Python functions to run on all future responses to my prompt #2 above that makes sure the new instructions are followed. Do not suggest any evaluation functions for PromptRephrasing and DataOrContextAddition modifications. The functions should operate on LLM responses and adhere to the following requirements:
 
-1. Only use the `json`, `re`, and standard Python libraries.
+1. Only use the `json`, `numpy`, `pandas`, `re`, and other standard Python libraries.
 2. For complex evaluations that can't be handled purely by pattern matching or logical checks, you may use the ask_expert function. This function sends a specific yes-or-no question to a human expert and returns a boolean value. Use this sparingly, as it is expensive.
 3. Evaluation functions should return a binary True or False value.
 4. For scorecard items, avoid generic evaluations. Instead, explicitly evaluate the response against the specific criteria provided. For instance, if the scorecard item specifies a "concise response", the function might check the length of the response and decide whether it's concise.
+5. Use the following template for each function, only accepting the LLM prompt and response as arguments:
 
 **Function Signature**:
 ```python
-def evaluation_function_name(response: str) -> bool:
+def evaluation_function_name(prompt: str, response: str) -> bool:
     # Your implementation here
 ```
 
@@ -123,13 +138,13 @@ We want to derive automated evaluation functions to verify if the responses adhe
 
 {example_evals}
 
-Keep in mind that these functions serve as templates. You'll need to adjust the specifics (like the exact phrases or counts) based on the actual criteria I've added to my prompts. Each function should be complete a standalone validation task to run on every response to my prompt. Each function should be a correct Python function that I can run on every LLM response for all future pipeline runs."""
+Keep in mind that these functions serve as templates. You'll need to adjust the specifics (like the exact phrases or counts) based on the actual criteria I've added to my prompts. Each function should be complete a standalone validation task to run on every response to my prompt. Each function should be a correct, specific (not generic) Python function that I can run on every LLM response for all future pipeline runs."""
 
 EXAMPLE_EVALS = {
     "PresentationFormat": """**Presentation Format**:
     - If the desired format is JSON:
     ```python
-    def evaluate_json_format(response: str) -> bool:
+    def evaluate_json_format(prompt: str, response: str) -> bool:
         try:
             json.loads(response)
             return True
@@ -138,14 +153,14 @@ EXAMPLE_EVALS = {
     ```
     - If the desired format is a list:
     ```python
-    def evaluate_list_format(response: str) -> bool:
+    def evaluate_list_format(prompt: str, response: str) -> bool:
         # Check if response starts with a bullet point or number
         return response.startswith("- ") or response.startswith("1. ")
     ```
     """,
     "ExampleDemonstration": """**Example Demonstration**:
     ```python
-    def check_example_demonstration(response: str) -> bool:
+    def check_example_demonstration(prompt: str, response: str) -> bool:
         # Suppose the example is to start the response with "In my opinion,"
         if response.startswith("In my opinion,"):
             return True
@@ -154,7 +169,7 @@ EXAMPLE_EVALS = {
     """,
     "Count": """**Count**:
     ```python
-    def evaluate_num_distinct_words(response: str) -> bool:
+    def evaluate_num_distinct_words(prompt: str, response: str) -> bool:
         # Suppose responses should contain at least 3 distinct words
         distinct_word_count = len(set(response.split()))
         return distinct_word_count >= 3
@@ -162,7 +177,7 @@ EXAMPLE_EVALS = {
     """,
     "Inclusion": """**Inclusion**:
     ```python
-    def check_includes_color(response: str) -> bool:
+    def check_includes_color(prompt: str, response: str) -> bool:
         # Suppose the response should include some color
         colors = ["red", "green", "blue", "yellow", "orange", "purple", "pink", "brown", "black", "white", "gray", "navy"]
     
@@ -171,7 +186,7 @@ EXAMPLE_EVALS = {
     """,
     "Exclusion": """**Exclusion**:
     ```python
-    def check_excludes_phrases(response: str) -> bool:
+    def check_excludes_phrases(prompt: str, response: str) -> bool:
         forbidden_phrases = ["forbidden phrase 1", "forbidden phrase 2"]
         return not any(phrase in response for phrase in forbidden_phrases)
     ```
@@ -179,14 +194,14 @@ EXAMPLE_EVALS = {
     "ScorecardItems": """**Scorecard Items**:
     - If the desired length is concise:
     ```python
-    def evaluate_concise(response: str) -> bool:
+    def evaluate_concise(prompt: str, response: str) -> bool:
         # Suppose the response should be less than 50 characters
         return len(response) < 50
     ```
     - If the desired tone is positive:
     ```python
-    def evaluate_tone(response: str) -> bool:
-        return ask_expert("Is the tone of the response positive?")
+    def evaluate_tone(prompt: str, response: str) -> bool:
+        return ask_expert(f"Is the tone of the response \{response\} positive?")
     ```
     """,
 }
@@ -207,12 +222,15 @@ def get_suggest_eval_prompt(changes_flagged):
 async def suggest_evals(
     template_1: str,
     template_2: str,
+    source: str,
     characterize_callback: Optional[Callable[[str], None]] = None,
     eval_prediction_callback: Optional[Callable[[str], None]] = None,
 ):
     """Suggest evals for the user to run based on prompt deltas."""
     with trace_as_chain_group(
-        "suggest_evals", inputs={"template_1": template_1, "template_2": template_2}
+        "suggest_evals",
+        inputs={"template_1": template_1, "template_2": template_2},
+        tags=source,
     ) as cb:
         # If the templates are the same, return []
         if template_1 == template_2:
@@ -241,10 +259,7 @@ async def suggest_evals(
         # First characterize the deltas
         try:
             lc_messages = convert_openai_messages(messages)
-            char_response = llm.astream(
-                lc_messages,
-                {"callbacks": cb}
-            )
+            char_response = llm.astream(lc_messages, {"callbacks": cb})
 
             logging.debug("Determining prompt deltas...")
             collected_messages = []
@@ -321,10 +336,7 @@ async def suggest_evals(
         )
         logging.debug("Generating evals...")
         lc_messages = convert_openai_messages(messages)
-        eval_response_stream = llm.astream(
-            lc_messages,
-            {"callbacks": cb}
-        )
+        eval_response_stream = llm.astream(lc_messages, {"callbacks": cb})
         eval_response = []
         async for chunk in eval_response_stream:
             if eval_prediction_callback:
@@ -332,29 +344,42 @@ async def suggest_evals(
             eval_response.append(chunk.content)
         eval_prediction_callback(None)
         eval_response_content = "".join(eval_response)
+        messages.append(
+            {"content": eval_response_content, "role": "assistant"}
+        )
+
         # Look for the evals in the response as any instance of ```python ```
         # pattern = r"```python(.*?)```"
-        pattern = r"```python\s+(.*?def.*?)(?=\n```)"  # match any def
-        matches = re.findall(pattern, eval_response_content, re.DOTALL)
+        # pattern = r"```python\s+(.*?def.*?)(?=\n```)"  # match any def
+        pattern = r"^\s*```python\s+(.*?def.*?)(?=\n\s*```)"  # match any def with leading whitespace
+        matches = re.findall(
+            pattern, eval_response_content, re.DOTALL | re.MULTILINE
+        )
 
         # Get longest match
-        if matches:
-            match = matches[-1].strip()
+        for match in matches:
+            match = match.strip()
 
             try:
                 # Replace `ask_expert` with a call to an llm function
                 needs_llm = False
                 function_str = match
                 if "ask_expert" in function_str:
-                    function_str = function_str.replace("ask_expert", "ask_llm")
+                    function_str = function_str.replace(
+                        "ask_expert", "ask_llm"
+                    )
                     needs_llm = True
 
                 # Add the function to the list of eval functions
-                eval_functions.append({"code": function_str, "needs_llm": needs_llm})
+                eval_functions.append(
+                    {"code": function_str, "needs_llm": needs_llm}
+                )
 
             except:
                 logging.error(f"Error parsing code: {match}")
-        cb.on_chain_end({"eval_functions": eval_functions, "messages": messages})
+        cb.on_chain_end(
+            {"eval_functions": eval_functions, "messages": messages}
+        )
         return eval_functions, messages
 
 
