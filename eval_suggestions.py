@@ -2,6 +2,7 @@
 Module to suggest evals for the user to run based on prompt deltas.
 """
 import difflib
+import hashlib
 import json
 from typing import Callable, Optional
 
@@ -207,6 +208,13 @@ EXAMPLE_EVALS = {
     """,
 }
 
+# Hash all prompts into a single string
+combined_content = (
+    CATEGORIZE_TEMPLATE + SUGGEST_EVAL_TEMPLATE + str(EXAMPLE_EVALS)
+).encode()
+hash_object = hashlib.sha256(combined_content)
+PIPELINE_PROMPT_HASH = hash_object.hexdigest()
+
 
 def get_suggest_eval_prompt(changes_flagged):
     # See which keys have been flagged
@@ -230,12 +238,21 @@ async def suggest_evals(
     """Suggest evals for the user to run based on prompt deltas."""
     with trace_as_chain_group(
         "suggest_evals",
-        inputs={"template_1": template_1, "template_2": template_2},
+        inputs={
+            "template_1": template_1,
+            "template_2": template_2,
+            "pipeline_version": PIPELINE_PROMPT_HASH,
+        },
         tags=[source],
     ) as cb:
         # If the templates are the same, return []
         if template_1 == template_2:
-            cb.on_chain_end({"eval_functions": [], "messages": []})
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": [],
+                }
+            )
             return [], []
 
         template_1_pretty = template_1 if template_1 != "" else "Empty string"
@@ -275,7 +292,12 @@ async def suggest_evals(
 
         except Exception as e:
             logging.error(f"Error getting deltas: {e}")
-            cb.on_chain_end({"eval_functions": [], "messages": messages})
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": messages,
+                }
+            )
             return [], messages
 
         # Parse the reply's json from ```json ... ```
@@ -287,7 +309,12 @@ async def suggest_evals(
         except Exception as e:
             logging.error(f"Error parsing json: {e}")
             messages.append({"content": reply, "role": "assistant"})
-            cb.on_chain_end({"eval_functions": [], "messages": messages})
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": messages,
+                }
+            )
             return [], messages
 
         # Look for any changes
@@ -315,14 +342,13 @@ async def suggest_evals(
 
         # If there are no changes, return []
         if not changes_made:
-            cb.on_chain_end({"eval_functions": [], "messages": messages})
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": messages,
+                }
+            )
             return [], messages
-
-        # # Delete the PromptRephrasing and DataOrContextAddition keys
-        # if "PromptRephrasing" in reply_json["Structural"]:
-        #     del reply_json["Structural"]["PromptRephrasing"]
-        # if "DataOrContextAddition" in reply_json["Structural"]:
-        #     del reply_json["Structural"]["DataOrContextAddition"]
 
         messages.append(
             {
@@ -379,7 +405,10 @@ async def suggest_evals(
             except:
                 logging.error(f"Error parsing code: {match}")
         cb.on_chain_end(
-            {"eval_functions": eval_functions, "messages": messages}
+            {
+                "eval_functions": eval_functions,
+                "messages": messages,
+            },
         )
         return eval_functions, messages
 
