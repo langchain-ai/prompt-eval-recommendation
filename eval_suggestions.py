@@ -65,59 +65,61 @@ def show_readable_diff(template_1: str, template_2: str):
     return "\n".join(output)
 
 
-CATEGORIZE_TEMPLATE = """I need your assistance in identifying any new instructions I've added to my prompt. The new instructions will help inform the creation of new evaluation functions for future responses to my prompt.
+CATEGORIZE_TEMPLATE = """I need your assistance in identifying and categorizing any new instructions I've added to my prompt template, that add requirements for LLM pipeline responses to satisfy.
 
 **First Prompt Template**: 
 ```
 {template_1}
 ```
 
-**Second Prompt Template**:
+**Second Prompt Template** (Updated):
 ```
 {template_2}
 ```
 
-**Additions Highlighted**:
+**Changes Highlighted**:
 ```
 {diff}
 ```
 
-First, analyze the given templates and categorize the new additions to the prompt according to the following criteria:
+Please focus your analysis on the newly added instructions in the updated prompt template. Use the categories listed below to describe the changes::
 
 - **Structural**:
-  - **Presentation Format**: Did I add any specification of the expected response format, such as a list, JSON, Markdown, or HTML?
-  - **Example Demonstration**: Did I add any examples that demonstrate the desired response beyond the format, such as specific headers or keys?
-  - **Prompt Rephrasing (not a new instruction)**: Did I rephrase the prompt to clarify the task?
-  - **Data Sources or Context Addition (not a new instruction)**: Did I add any new data sources or context, like variables or placeholders, to help the LLM give a better response?
+  - **Presentation Format**: Have any new specifications been added regarding the expected response format, such as a list, JSON, Markdown, or HTML?
+  - **Example Demonstration**: Are there any new examples provided to demonstrate the desired response format, including specific headers, keys, or structures?
+  - **Prompt Rephrasing (not a new instruction)**: Has the prompt been rephrased slightly to clarify the task, maintaining the same overall semantic meaning?
 
 - **Content**:
-  - **Count**: Did I add any new specifications regarding the number of items of some type in the response, like "at least", "at most", or an exact count?
-  - **Inclusion**: Did I add any new phrases or ideas to the prompt that every future LLM response should include?
-  - **Exclusion**: Did I specify any new phrases or ideas that every future LLM response should exclude?
-  - **Scorecard Items**: Did I add any new qualitative criteria of good responses, such as a specific length, tone, or style?
+  - **Workflow Description**: Have more detailed steps on how to perform the task been newly added?
+  - **Data Placeholders**: Have any new data sources or context been inserted in placeholders for the LLM to consider?
+  - **Count**: Have there been new specifications added regarding the number of items of a certain type in the response, such as “at least”, “at most”, or an exact number?
+  - **Inclusion**: Are there new keywords that every future LLM response should now include?
+  - **Exclusion**: Have any new keywords been specified that should be excluded from all future LLM responses?
+  - **Qualitative Assessment**: Are there new qualitative criteria for assessing good responses, including specific requirements for length, tone, or style?
 
 **Expected Output Structure**:
 
 ```json
 {{
   "Structural": {{
-    "PresentationFormat": "Describe the new high-level format (if any)",
-    "ExampleDemonstration": "Describe the new structure every response should follow (if any)",
-    "PromptRephrasing": "Change description (if any)",
-    "DataOrContextAddition": "Change description (if any)"
+    "PresentationFormat": "Describe new format specifications (if any)",
+    "ExampleDemonstration": "Describe new example structure (if any)",
+    "PromptRephrasing": "Change description (if any)"
   }},
   "Content": {{
-    "Count": "Describe the new item that should be counted (if any)",
-    "Inclusion": "State the new phrase that should be included in every response (if any)",
-    "Exclusion": "State the new phrase that should be excluded from every response (if any)",
-    "ScorecardItems": "Describe the new qualitative criteria of good responses (if any)"
+    "WorkflowDescription": "Describe added workflow steps (if any)",
+    "DataPlaceholders": "Describe added data sources or context (if any)",
+    "Count": "Describe new item count specifications (if any)",
+    "Inclusion": "State new keywords for LLM to include in all responses (if any)",
+    "Exclusion": "State new keywords for LLM to exclude from all responses (if any)",
+    "QualitativeAssessment": "Describe new qualitative criteria of a good LLM response (if any)"
   }}
 }}
 ```
 
-Fill out the structure based on your analysis. For categories without changes, indicate "No change". Don't mention any Python functions yet."""
+Please fill out this structure based on your analysis of the newly added instructions. For any categories without changes, please write "No change." Remember, at this stage, we are focusing on identifying additions to the prompt template, not deletions."""
 
-SUGGEST_EVAL_TEMPLATE = """Using the JSON output detailing the new instructions I added to the LLM prompt, design Python functions to run on all future responses to my prompt #2 above that makes sure the new instructions are followed. Do not suggest any evaluation functions for PromptRephrasing and DataOrContextAddition modifications. The functions should operate on LLM responses and adhere to the following requirements:
+SUGGEST_EVAL_TEMPLATE = """Using the JSON output detailing the new instructions I added to the LLM prompt, write evaluation functions to run on all future responses to my prompt #2 above that makes sure the new instructions are followed. Do not suggest any evaluation functions for PromptRephrasing, WorkflowDescription, or DataPlaceholders type instructions. The functions should be in Python and adhere to the following guidelines:
 
 1. Only use the `json`, `numpy`, `pandas`, `re`, and other standard Python libraries.
 2. For complex evaluations that can't be handled purely by pattern matching or logical checks, you may use the ask_expert function. This function sends a specific yes-or-no question to a human expert and returns a boolean value. Use this sparingly, as it is expensive.
@@ -161,10 +163,9 @@ EXAMPLE_EVALS = {
     "ExampleDemonstration": """**Example Demonstration**:
     ```python
     def check_example_demonstration(prompt: str, response: str) -> bool:
-        # Suppose the example is to start the response with "In my opinion,"
-        if response.startswith("In my opinion,"):
-            return True
-        return False
+        # Suppose the example demonstration is markdown and has specific headers
+        # of "First Header" and "Second Header"
+        return "# First Header" in response and "# Second Header" in response
     ```
     """,
     "Count": """**Count**:
@@ -178,8 +179,8 @@ EXAMPLE_EVALS = {
     "Inclusion": """**Inclusion**:
     ```python
     def check_includes_color(prompt: str, response: str) -> bool:
-        # Suppose the response should include some color
-        colors = ["red", "green", "blue", "yellow", "orange", "purple", "pink", "brown", "black", "white", "gray", "navy"]
+        # Suppose the response should include some color in the rainbow
+        colors = ["red", "orange", "yellow", "green", "blue", "purple", "indigo"]
     
         return any(color in response for color in colors)
     ```
@@ -191,7 +192,7 @@ EXAMPLE_EVALS = {
         return not any(phrase in response for phrase in forbidden_phrases)
     ```
     """,
-    "ScorecardItems": """**Scorecard Items**:
+    "QualitativeAssessment": """**Qualitative Assessment**:
     - If the desired length is concise:
     ```python
     def evaluate_concise(prompt: str, response: str) -> bool:
@@ -230,7 +231,7 @@ async def suggest_evals(
     with trace_as_chain_group(
         "suggest_evals",
         inputs={"template_1": template_1, "template_2": template_2},
-        tags=source,
+        tags=[source],
     ) as cb:
         # If the templates are the same, return []
         if template_1 == template_2:
@@ -243,7 +244,7 @@ async def suggest_evals(
         diff = show_readable_diff(template_1, template_2)
         messages = [
             {
-                "content": "You are a Python expert and expert in prompting large language models (LLMs). You are assisting me write evaluation functions for a complex LLM pipeline. An LLM pipeline accepts a prompt, with some instructions, and creates a response to answer the prompt. Typically as a developer tests a pipeline, they observe that some responses are not good, so they add new instructions to their prompt to prevent against these failure modes. Based on edits I make to a prompt template (which are indicative of possible failure modes), you will infer some evaluation functions that I should run on future LLM pipeline responses.",
+                "content": "You are an expert in Python and prompting large language models (LLMs). You are assisting me, a prompt engineer, build and monitor an LLM pipeline. An LLM pipeline accepts a prompt, with some instructions, and uses an LLM to generate a response to the prompt. A prompt engineer writes a prompt template, with placeholders, that will get formatted with different variables at pipeline runtime. Typically as prompt engineers test a pipeline, we observe that some responses are not good, so we add new instructions to the prompt template to prevent against these failure modes.",
                 "role": "system",
             },
             {
@@ -307,19 +308,21 @@ async def suggest_evals(
         # Remove promptrephrasing and dataorcontextaddition
         if "PromptRephrasing" in changes_made:
             changes_made.remove("PromptRephrasing")
-        if "DataOrContextAddition" in changes_made:
-            changes_made.remove("DataOrContextAddition")
+        if "WorkflowDescription" in changes_made:
+            changes_made.remove("WorkflowDescription")
+        if "DataPlaceholders" in changes_made:
+            changes_made.remove("DataPlaceholders")
 
         # If there are no changes, return []
         if not changes_made:
             cb.on_chain_end({"eval_functions": [], "messages": messages})
             return [], messages
 
-        # Delete the PromptRephrasing and DataOrContextAddition keys
-        if "PromptRephrasing" in reply_json["Structural"]:
-            del reply_json["Structural"]["PromptRephrasing"]
-        if "DataOrContextAddition" in reply_json["Structural"]:
-            del reply_json["Structural"]["DataOrContextAddition"]
+        # # Delete the PromptRephrasing and DataOrContextAddition keys
+        # if "PromptRephrasing" in reply_json["Structural"]:
+        #     del reply_json["Structural"]["PromptRephrasing"]
+        # if "DataOrContextAddition" in reply_json["Structural"]:
+        #     del reply_json["Structural"]["DataOrContextAddition"]
 
         messages.append(
             {
@@ -349,8 +352,6 @@ async def suggest_evals(
         )
 
         # Look for the evals in the response as any instance of ```python ```
-        # pattern = r"```python(.*?)```"
-        # pattern = r"```python\s+(.*?def.*?)(?=\n```)"  # match any def
         pattern = r"^\s*```python\s+(.*?def.*?)(?=\n\s*```)"  # match any def with leading whitespace
         matches = re.findall(
             pattern, eval_response_content, re.DOTALL | re.MULTILINE

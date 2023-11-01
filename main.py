@@ -10,12 +10,9 @@ from langchain import hub
 from langchainhub import Client as HubClient
 import asyncio
 import functools
+import base64
 
 from rich import print
-
-# TODOS:
-# Log interactions with the copy code button -- this is a bit tricky because
-# we'd need to make a javascript code rendering component with a copy button
 
 client = Client()
 hub_client = HubClient()
@@ -218,11 +215,22 @@ if st.session_state.versions:
 
                 st.session_state.run_ids = [run.id for run in cb.traced_runs]
 
+
+def log_download_event(run_ids):
+    for run_id in run_ids:
+        client.create_feedback(
+            run_id,
+            "download_button_clicked",
+        )
+
+
 if st.session_state.get("run_ids"):
     # Show eval functions
     st.write("Evaluation functions:")
+    all_functions = [
+        "import json\nimport re\nimport numpy as np\nimport pandas as pd"
+    ]
     for i, function in enumerate(st.session_state.eval_functions):
-        # TODO: Handle copy events
         code_id = (
             "code_"
             + hashlib.md5(str(function["code"]).encode()).hexdigest()[:6]
@@ -232,7 +240,20 @@ if st.session_state.get("run_ids"):
 {function['code']}
 </code></pre>
 """
+        all_functions.append(
+            f"# Needs LLM: {function['needs_llm']}\n{function['code']}"
+        )
         st.markdown(code_html, unsafe_allow_html=True)
+
+    # Create a Streamlit button to download the Python file
+    st.download_button(
+        label="Download Python File",
+        data="\n\n".join(all_functions),
+        file_name="eval_functions.py",
+        mime="text/plain",
+        type="primary",
+        on_click=lambda: log_download_event(st.session_state.run_ids),
+    )
 
     # Show full message history
     with st.expander("GPT-4 message history", expanded=False):
