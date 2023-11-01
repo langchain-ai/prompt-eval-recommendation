@@ -241,9 +241,8 @@ async def suggest_evals(
         inputs={
             "template_1": template_1,
             "template_2": template_2,
-            "pipeline_version": PIPELINE_PROMPT_HASH,
         },
-        tags=[source],
+        tags=[source, PIPELINE_PROMPT_HASH],
     ) as cb:
         # If the templates are the same, return []
         if template_1 == template_2:
