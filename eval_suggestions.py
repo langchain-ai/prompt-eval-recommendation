@@ -2,6 +2,7 @@
 Module to suggest evals for the user to run based on prompt deltas.
 """
 import difflib
+import hashlib
 import json
 from typing import Callable, Optional
 
@@ -16,7 +17,7 @@ from langchain.callbacks.manager import trace_as_chain_group
 
 llm = ChatOpenAI(model="gpt-4")
 
-load_dotenv()
+# load_dotenv()
 
 # import os
 
@@ -119,13 +120,16 @@ Please focus your analysis on the newly added instructions in the updated prompt
 
 Please fill out this structure based on your analysis of the newly added instructions. For any categories without changes, please write "No change." Remember, at this stage, we are focusing on identifying additions to the prompt template, not deletions."""
 
-SUGGEST_EVAL_TEMPLATE = """Using the JSON output detailing the new instructions I added to the LLM prompt, write evaluation functions to run on all future responses to my prompt #2 above that makes sure the new instructions are followed. Do not suggest any evaluation functions for PromptRephrasing, WorkflowDescription, or DataPlaceholders type instructions. The functions should be in Python and adhere to the following guidelines:
+SUGGEST_EVAL_TEMPLATE = """Please use this JSON structure, detailing the newly added instructions to the LLM prompt, to design evaluation functions for each applicable change.
 
-1. Only use the `json`, `numpy`, `pandas`, `re`, and other standard Python libraries.
-2. For complex evaluations that can't be handled purely by pattern matching or logical checks, you may use the ask_expert function. This function sends a specific yes-or-no question to a human expert and returns a boolean value. Use this sparingly, as it is expensive.
-3. Evaluation functions should return a binary True or False value.
-4. For scorecard items, avoid generic evaluations. Instead, explicitly evaluate the response against the specific criteria provided. For instance, if the scorecard item specifies a "concise response", the function might check the length of the response and decide whether it's concise.
-5. Use the following template for each function, only accepting the LLM prompt and response as arguments:
+**Requirements and Guidelines:**
+
+1. Limit the use of libraries in your functions to json, numpy, pandas, re, and other standard Python libraries.
+2. For complex evaluations where pattern matching or logical checks are insufficient, you may use the `ask_expert` function. This function sends a specific yes-or-no question to a human expert and returns a boolean value. Use this sparingly, as it is expensive.
+3. All evaluation functions should return a binary True or False value.
+4. All evaluation functions should have a descriptive name and comment explaining the purpose of the function.
+5. When creating functions for QualitativeAssesment prompt additions, target the specific criteria added to the prompt rather than creating generic evaluations. For instance, if the scorecard item specifies a "concise response", the function might check the length of the response and decide whether it's concise.
+6. Use the following template for each function, only accepting the LLM prompt and response as arguments:
 
 **Function Signature**:
 ```python
@@ -133,14 +137,17 @@ def evaluation_function_name(prompt: str, response: str) -> bool:
     # Your implementation here
 ```
 
-**Given the JSON Output of Changes**:
-We want to derive automated evaluation functions to verify if the responses adhere to the requirements.
+**Evaluation Categories and Example Functions:**
 
-**Example Functions for Each Type of Change**:
+Below are examples of functions for each type of change you might encounter, based on the JSON structure provided:
 
 {example_evals}
 
-Keep in mind that these functions serve as templates. You'll need to adjust the specifics (like the exact phrases or counts) based on the actual criteria I've added to my prompts. Each function should be complete a standalone validation task to run on every response to my prompt. Each function should be a correct, specific (not generic) Python function that I can run on every LLM response for all future pipeline runs."""
+**Important Notes:**
+
+- Customize the provided function templates based on the actual criteria specified in the given JSON output of changes. You'll need to adjust the specifics (like the exact phrases or counts) based on the actual criteria I've added to my prompts. Make sure each function has a descriptive name and comment explaining the purpose of the function.
+- Do not create evaluation functions for changes categorized under "PromptRephrasing", "WorkflowDescription", or "DataPlaceholders".
+- Ensure that each function serves as a standalone validation tool to run on every response to the prompt. Each function should be correct and complete, and should not rely on other non-library functions to run."""
 
 EXAMPLE_EVALS = {
     "PresentationFormat": """**Presentation Format**:
@@ -207,6 +214,13 @@ EXAMPLE_EVALS = {
     """,
 }
 
+# Hash all prompts into a single string
+combined_content = (
+    CATEGORIZE_TEMPLATE + SUGGEST_EVAL_TEMPLATE + str(EXAMPLE_EVALS)
+).encode()
+hash_object = hashlib.sha256(combined_content)
+PIPELINE_PROMPT_HASH = hash_object.hexdigest()
+
 
 def get_suggest_eval_prompt(changes_flagged):
     # See which keys have been flagged
@@ -230,12 +244,20 @@ async def suggest_evals(
     """Suggest evals for the user to run based on prompt deltas."""
     with trace_as_chain_group(
         "suggest_evals",
-        inputs={"template_1": template_1, "template_2": template_2},
-        tags=[source],
+        inputs={
+            "template_1": template_1,
+            "template_2": template_2,
+        },
+        tags=[source, PIPELINE_PROMPT_HASH],
     ) as cb:
         # If the templates are the same, return []
         if template_1 == template_2:
-            cb.on_chain_end({"eval_functions": [], "messages": []})
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": [],
+                }
+            )
             return [], []
 
         template_1_pretty = template_1 if template_1 != "" else "Empty string"
@@ -275,7 +297,12 @@ async def suggest_evals(
 
         except Exception as e:
             logging.error(f"Error getting deltas: {e}")
-            cb.on_chain_end({"eval_functions": [], "messages": messages})
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": messages,
+                }
+            )
             return [], messages
 
         # Parse the reply's json from ```json ... ```
@@ -287,7 +314,12 @@ async def suggest_evals(
         except Exception as e:
             logging.error(f"Error parsing json: {e}")
             messages.append({"content": reply, "role": "assistant"})
-            cb.on_chain_end({"eval_functions": [], "messages": messages})
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": messages,
+                }
+            )
             return [], messages
 
         # Look for any changes
@@ -315,14 +347,13 @@ async def suggest_evals(
 
         # If there are no changes, return []
         if not changes_made:
-            cb.on_chain_end({"eval_functions": [], "messages": messages})
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": messages,
+                }
+            )
             return [], messages
-
-        # # Delete the PromptRephrasing and DataOrContextAddition keys
-        # if "PromptRephrasing" in reply_json["Structural"]:
-        #     del reply_json["Structural"]["PromptRephrasing"]
-        # if "DataOrContextAddition" in reply_json["Structural"]:
-        #     del reply_json["Structural"]["DataOrContextAddition"]
 
         messages.append(
             {
@@ -379,7 +410,10 @@ async def suggest_evals(
             except:
                 logging.error(f"Error parsing code: {match}")
         cb.on_chain_end(
-            {"eval_functions": eval_functions, "messages": messages}
+            {
+                "eval_functions": eval_functions,
+                "messages": messages,
+            },
         )
         return eval_functions, messages
 

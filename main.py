@@ -247,7 +247,7 @@ if st.session_state.get("run_ids"):
 
     # Create a Streamlit button to download the Python file
     st.download_button(
-        label="Download Python File",
+        label="Download Functions as Python File",
         data="\n\n".join(all_functions),
         file_name="eval_functions.py",
         mime="text/plain",
