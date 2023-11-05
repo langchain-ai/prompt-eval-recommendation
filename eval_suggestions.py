@@ -17,7 +17,7 @@ from langchain.callbacks.manager import trace_as_chain_group
 
 llm = ChatOpenAI(model="gpt-4")
 
-# load_dotenv()
+load_dotenv()
 
 # import os
 
@@ -120,7 +120,7 @@ Please focus your analysis on the newly added instructions in the updated prompt
 
 Please fill out this structure based on your analysis of the newly added instructions. For any categories without changes, please write "No change." Remember, at this stage, we are focusing on identifying additions to the prompt template, not deletions."""
 
-SUGGEST_EVAL_TEMPLATE = """Please use this JSON structure, detailing the newly added instructions to the LLM prompt, to design evaluation functions for each applicable change.
+SUGGEST_EVAL_TEMPLATE = """Please use this JSON structure, detailing the newly added instructions to the LLM prompt, to design at least one evaluation function for each applicable change.
 
 **Requirements and Guidelines:**
 
@@ -128,7 +128,7 @@ SUGGEST_EVAL_TEMPLATE = """Please use this JSON structure, detailing the newly a
 2. For complex evaluations where pattern matching or logical checks are insufficient, you may use the `ask_expert` function. This function sends a specific yes-or-no question to a human expert and returns a boolean value. Use this sparingly, as it is expensive.
 3. All evaluation functions should return a binary True or False value.
 4. All evaluation functions should have a descriptive name and comment explaining the purpose of the function.
-5. When creating functions for QualitativeAssesment prompt additions, target the specific criteria added to the prompt rather than creating generic evaluations. For instance, if the scorecard item specifies a "concise response", the function might check the length of the response and decide whether it's concise.
+5. When creating functions for QualitativeAssesment prompt additions, target the specific criteria added to the prompt rather than creating generic evaluations. For instance, if the criteria specifies a "concise response", the function might check the length of the response and decide whether it's concise. Create a different function for each qualitative criteria, even if there are multiple criteria in the same prompt edit.
 6. Use the following template for each function, only accepting the LLM prompt and response as arguments:
 
 **Function Signature**:
@@ -146,7 +146,7 @@ Below are examples of functions for each type of change you might encounter, bas
 **Important Notes:**
 
 - Customize the provided function templates based on the actual criteria specified in the given JSON output of changes. You'll need to adjust the specifics (like the exact phrases or counts) based on the actual criteria I've added to my prompts. Make sure each function has a descriptive name and comment explaining the purpose of the function.
-- Do not create evaluation functions for changes categorized under "PromptRephrasing", "WorkflowDescription", or "DataPlaceholders".
+- Do not create evaluation functions for changes categorized under "PromptRephrasing" or "DataPlaceholders".
 - Ensure that each function serves as a standalone validation tool to run on every response to the prompt. Each function should be correct and complete, and should not rely on other non-library functions to run."""
 
 EXAMPLE_EVALS = {
@@ -340,8 +340,8 @@ async def suggest_evals(
         # Remove promptrephrasing and dataorcontextaddition
         if "PromptRephrasing" in changes_made:
             changes_made.remove("PromptRephrasing")
-        if "WorkflowDescription" in changes_made:
-            changes_made.remove("WorkflowDescription")
+        # if "WorkflowDescription" in changes_made:
+        #     changes_made.remove("WorkflowDescription")
         if "DataPlaceholders" in changes_made:
             changes_made.remove("DataPlaceholders")
 
