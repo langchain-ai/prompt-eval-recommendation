@@ -14,28 +14,51 @@ import base64
 
 from rich import print
 
+
+# Color mapping for each tag
+color_mapping = {
+    "PresentationFormat": "#FFCCCC",  # Light Red
+    "ExampleDemonstration": "#FFFF99",  # Light Yellow
+    "PromptRephrasing": "#CCFFFF",  # Light Cyan
+    "WorkflowDescription": "#C8A2C8",  # Lilac
+    "DataPlaceholders": "#CCCCFF",  # Light Periwinkle
+    "Count": "#FFCC99",  # Light Orange
+    "Inclusion": "#CCFF99",  # Light Lime
+    "Exclusion": "#FF99CC",  # Light Pink
+    "QualitativeAssessment": "#99CCFF",  # Light Blue Gray
+}
+
+
+def apply_color_styles(prompt_with_tags, color_mapping):
+    for tag, color in color_mapping.items():
+        prompt_with_tags = prompt_with_tags.replace(
+            f"<{tag}>", f"<span style='background-color: {color};'>"
+        ).replace(f"</{tag}>", "</span>")
+    return prompt_with_tags
+
+
 client = Client()
 hub_client = HubClient()
 
 st.set_page_config(
-    page_title="Capturing User Feedback",
-    page_icon="🦜️️🛠️",
+    page_title="SPADE: System for Prompt Analysis and Delta-based Evaluation",
+    page_icon="🦜️️🛠️ ♠️",
 )
 
-st.subheader("🦜🛠️ Get Suggested Evalution Functions")
+st.subheader("🦜🛠️ ♠️ Get Suggested Evalution Functions")
 st.write(
-    "This tool will suggest binary eval functions for your prompt that you can run on all future LLM responses on. It works best when given the version history of your prompt (i.e., through a LangSmith Hub repo), but you can also use it with a single prompt template."
+    "SPADE ♠️ (System for Prompt Analysis and Delta-based Evaluation) will suggest binary eval functions for your prompt that you can run on all future LLM responses on. It works best when given the version history of your prompt (i.e., through a LangSmith Hub repo), but you can also use it with a single prompt template."
 )
 
 with st.expander("ℹ️ How it works"):
     st.write(
-        "This tool uses GPT-4 to first determine any additions to prompts between consecutive versions. If you don't have prompt version history, it compares your prompt to a blank prompt."
+        "SPADE uses GPT-4 to first determine any additions to prompts between consecutive versions. If you don't have prompt version history, it compares your prompt to a blank prompt."
     )
     st.write(
         'Then, given the additions to a prompt (e.g., adding the phrase "limit your answer to 5 words"), it synthesizes a set of evaluation functions that can be used to evaluate future responses to your prompt (e.g., a function that splits the response into a list of words and checks that there are fewer than 5 elements).'
     )
     st.write(
-        "Evaluation functions take in the response text and return a boolean. Most will be simple, but some are more complex and may require an LLM to run. The tool will tell you which ones need an LLM, and the function will include a call to `ask_llm` (a placeholder function that asks a yes/to question an LLM)."
+        "Evaluation functions take in the response text and return a boolean. Most will be simple, but some are more complex and may require an LLM to run. SPADE will tell you which ones need an LLM, and the function will include a call to `ask_llm` (a placeholder function that asks a yes/to question an LLM)."
     )
 
 # Initialize session state variables
@@ -45,6 +68,8 @@ if "eval_functions" not in st.session_state:
     st.session_state.eval_functions = []
 if "message_history" not in st.session_state:
     st.session_state.message_history = []
+if "diff_to_render" not in st.session_state:
+    st.session_state.diff_to_render = None
 
 feedback_option = "thumbs"
 option = st.selectbox("Choose Input Type", ["Hub URL", "Prompt Template"])
@@ -187,7 +212,11 @@ if st.session_state.versions:
                         message_placeholder = st.empty()
                         function_response = []
                         eval_placeholder = st.empty()
-                        eval_functions, message_history = asyncio.run(
+                        (
+                            eval_functions,
+                            message_history,
+                            diff_to_render,
+                        ) = asyncio.run(
                             suggest_evals(
                                 version_1,
                                 version_2,
@@ -209,6 +238,7 @@ if st.session_state.versions:
                         # Save results to session state
                         st.session_state.eval_functions += eval_functions
                         st.session_state.message_history += message_history
+                        st.session_state.diff_to_render = diff_to_render
 
                         # Increment index
                         idx += 1
@@ -221,12 +251,34 @@ def log_download_event(run_ids):
         client.create_feedback(
             run_id,
             "download_button_clicked",
+            score=1,
         )
 
 
 if st.session_state.get("run_ids"):
+    # Show diff
+    if st.session_state.diff_to_render:
+        try:
+            diff_to_render = apply_color_styles(
+                st.session_state.diff_to_render, color_mapping
+            )
+
+            st_cols = st.columns(2)
+
+            st_cols[0].write("#### Your last prompt")
+            st_cols[0].markdown(diff_to_render, unsafe_allow_html=True)
+            # Create and display the legend for color mapping
+            st_cols[1].write("#### Prompt delta legend")
+            for tag, color in color_mapping.items():
+                st_cols[1].markdown(
+                    f"<span style='display:inline-block;width:12px;height:12px;background-color:{color};'></span> {tag}",
+                    unsafe_allow_html=True,
+                )
+        except Exception as e:
+            st.error(f"An error occurred while rendering your prompt: {e}")
+
     # Show eval functions
-    st.write("Evaluation functions:")
+    st.write("#### ♠️ Suggested evaluation functions")
     all_functions = [
         "import json\nimport re\nimport numpy as np\nimport pandas as pd"
     ]
@@ -283,7 +335,7 @@ if st.session_state.get("run_ids"):
     # Show CTA
     with st.form("email_for_study_form"):
         st.write(
-            "This is an experimental version of the tool, built in collaboration with UC Berkeley. If you'd like to participate in an interactive prompt engineering study so we can improve the tool, please enter your email below. We will not use your email for any other purpose. For more questions, please contact Shreya Shankar at shreyashankar@berkeley.edu."
+            "This is an experimental version of SPADE, built in collaboration with UC Berkeley. If you'd like to participate in an interactive prompt engineering study so we can improve the tool, please enter your email below. We will not use your email for any other purpose. For more questions, please contact Shreya Shankar at shreyashankar@berkeley.edu."
         )
         email_address = st.text_input("Email", key="email_address")
         email_submitted = st.form_submit_button("Submit")

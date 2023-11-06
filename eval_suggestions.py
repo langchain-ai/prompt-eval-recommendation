@@ -6,7 +6,7 @@ import hashlib
 import json
 from typing import Callable, Optional
 
-
+from copy import deepcopy
 from dotenv import load_dotenv
 
 import logging
@@ -17,7 +17,7 @@ from langchain.callbacks.manager import trace_as_chain_group
 
 llm = ChatOpenAI(model="gpt-4")
 
-# load_dotenv()
+load_dotenv()
 
 # import os
 
@@ -120,15 +120,15 @@ Please focus your analysis on the newly added instructions in the updated prompt
 
 Please fill out this structure based on your analysis of the newly added instructions. For any categories without changes, please write "No change." Remember, at this stage, we are focusing on identifying additions to the prompt template, not deletions."""
 
-SUGGEST_EVAL_TEMPLATE = """Please use this JSON structure, detailing the newly added instructions to the LLM prompt, to design evaluation functions for each applicable change.
+SUGGEST_EVAL_TEMPLATE = """Please use this JSON structure, detailing the newly added instructions to the LLM prompt template, to design at least one evaluation function for each applicable change.
 
 **Requirements and Guidelines:**
 
 1. Limit the use of libraries in your functions to json, numpy, pandas, re, and other standard Python libraries.
-2. For complex evaluations where pattern matching or logical checks are insufficient, you may use the `ask_expert` function. This function sends a specific yes-or-no question to a human expert and returns a boolean value. Use this sparingly, as it is expensive.
+2. For complex evaluations where pattern matching or logical checks are insufficient, you may use the `ask_expert` function. This function sends a specific yes-or-no question to a human expert and returns a boolean value.
 3. All evaluation functions should return a binary True or False value.
 4. All evaluation functions should have a descriptive name and comment explaining the purpose of the function.
-5. When creating functions for QualitativeAssesment prompt additions, target the specific criteria added to the prompt rather than creating generic evaluations. For instance, if the scorecard item specifies a "concise response", the function might check the length of the response and decide whether it's concise.
+5. When creating functions for QualitativeAssesment prompt additions, target the specific criteria added to the prompt rather than creating generic evaluations. For instance, if the criteria specifies a "concise response", the function might check the length of the response and decide whether it's concise. Create a different function for each qualitative criteria, even if there are multiple criteria in the same prompt edit.
 6. Use the following template for each function, only accepting the LLM prompt and response as arguments:
 
 **Function Signature**:
@@ -145,8 +145,9 @@ Below are examples of functions for each type of change you might encounter, bas
 
 **Important Notes:**
 
+- If writing a conditional based on keywords in the prompt, make sure the keywords aren't always present in the prompt template. For instance, if the prompt template always contains the word "wedding", don't write a function that checks if the response contains the word "wedding"--use a phrase like "my wedding" to check in the conditional. 
 - Customize the provided function templates based on the actual criteria specified in the given JSON output of changes. You'll need to adjust the specifics (like the exact phrases or counts) based on the actual criteria I've added to my prompts. Make sure each function has a descriptive name and comment explaining the purpose of the function.
-- Do not create evaluation functions for changes categorized under "PromptRephrasing", "WorkflowDescription", or "DataPlaceholders".
+- Do not create evaluation functions for changes categorized under "PromptRephrasing" or "DataPlaceholders".
 - Ensure that each function serves as a standalone validation tool to run on every response to the prompt. Each function should be correct and complete, and should not rely on other non-library functions to run."""
 
 EXAMPLE_EVALS = {
@@ -194,9 +195,13 @@ EXAMPLE_EVALS = {
     """,
     "Exclusion": """**Exclusion**:
     ```python
-    def check_excludes_phrases(prompt: str, response: str) -> bool:
-        forbidden_phrases = ["forbidden phrase 1", "forbidden phrase 2"]
-        return not any(phrase in response for phrase in forbidden_phrases)
+    def check_excludes_white(prompt: str, response: str) -> bool:
+        # Suppose the prompt template instructs not to include the color
+        # white for queries related to wedding dresses for guests
+        if "my wedding" in prompt:
+            return "white" not in response.lower()
+        else:
+            return True
     ```
     """,
     "QualitativeAssessment": """**Qualitative Assessment**:
@@ -214,9 +219,14 @@ EXAMPLE_EVALS = {
     """,
 }
 
+RENDER_DIFF_TEMPLATE = """Please use this JSON structure, detailing the newly added instructions to the LLM prompt template, to render the second prompt template with the changes highlighted. You should return the same second prompt template, but wrap each identified change based on the JSON structure of changes in its tag. Make sure each change has opening and closing tags (e.g., <PresentationFormat></PresentationFormat>), and that the tagged elements are as constrained as possible. Category tags should not be nested. Your answer should start with <FormattedPromptTemplate> and end with </FormattedPromptTemplate>"""
+
 # Hash all prompts into a single string
 combined_content = (
-    CATEGORIZE_TEMPLATE + SUGGEST_EVAL_TEMPLATE + str(EXAMPLE_EVALS)
+    CATEGORIZE_TEMPLATE
+    + SUGGEST_EVAL_TEMPLATE
+    + RENDER_DIFF_TEMPLATE
+    + str(EXAMPLE_EVALS)
 ).encode()
 hash_object = hashlib.sha256(combined_content)
 PIPELINE_PROMPT_HASH = hash_object.hexdigest()
@@ -256,9 +266,10 @@ async def suggest_evals(
                 {
                     "eval_functions": [],
                     "messages": [],
+                    "rendered_diff": None,
                 }
             )
-            return [], []
+            return [], [], None
 
         template_1_pretty = template_1 if template_1 != "" else "Empty string"
         template_2_pretty = template_2 if template_2 != "" else "Empty string"
@@ -301,9 +312,10 @@ async def suggest_evals(
                 {
                     "eval_functions": [],
                     "messages": messages,
+                    "rendered_diff": None,
                 }
             )
-            return [], messages
+            return [], messages, None
 
         # Parse the reply's json from ```json ... ```
         reply_json = None
@@ -318,9 +330,10 @@ async def suggest_evals(
                 {
                     "eval_functions": [],
                     "messages": messages,
+                    "rendered_diff": None,
                 }
             )
-            return [], messages
+            return [], messages, None
 
         # Look for any changes
         changes_made = []
@@ -340,10 +353,39 @@ async def suggest_evals(
         # Remove promptrephrasing and dataorcontextaddition
         if "PromptRephrasing" in changes_made:
             changes_made.remove("PromptRephrasing")
-        if "WorkflowDescription" in changes_made:
-            changes_made.remove("WorkflowDescription")
+        # if "WorkflowDescription" in changes_made:
+        #     changes_made.remove("WorkflowDescription")
         if "DataPlaceholders" in changes_made:
             changes_made.remove("DataPlaceholders")
+
+        # Render the diff
+        try:
+            diff_render_messages = deepcopy(messages)
+            diff_render_messages.append(
+                {"content": RENDER_DIFF_TEMPLATE, "role": "user"}
+            )
+            diff_render_response = await llm.ainvoke(
+                convert_openai_messages(diff_render_messages)
+            )
+            diff_render_response = diff_render_response.content
+
+            # Extract whatever is in ```<FormattedPromptTemplate> tags
+            pattern = (
+                r"<FormattedPromptTemplate>(.*?)</FormattedPromptTemplate>"
+            )
+            matches = re.findall(pattern, diff_render_response, re.DOTALL)
+            diff_render_response = matches[0]
+
+        except Exception as e:
+            logging.error(f"Error rendering diff: {e}")
+            cb.on_chain_end(
+                {
+                    "eval_functions": [],
+                    "messages": messages,
+                    "rendered_diff": None,
+                }
+            )
+            return [], messages, None
 
         # If there are no changes, return []
         if not changes_made:
@@ -351,9 +393,10 @@ async def suggest_evals(
                 {
                     "eval_functions": [],
                     "messages": messages,
+                    "rendered_diff": diff_render_response,
                 }
             )
-            return [], messages
+            return [], messages, diff_render_response
 
         messages.append(
             {
@@ -413,9 +456,10 @@ async def suggest_evals(
             {
                 "eval_functions": eval_functions,
                 "messages": messages,
+                "rendered_diff": diff_render_response,
             },
         )
-        return eval_functions, messages
+        return eval_functions, messages, diff_render_response
 
 
 if __name__ == "__main__":
