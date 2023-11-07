@@ -47,7 +47,7 @@ st.set_page_config(
 
 st.subheader("🦜🛠️ ♠️ Get Suggested Evalution Functions")
 st.write(
-    "SPADE ♠️ (System for Prompt Analysis and Delta-based Evaluation) will suggest binary eval functions for your prompt that you can run on all future LLM responses on. It works best when given the version history of your prompt (i.e., through a LangSmith Hub repo), but you can also use it with a single prompt template."
+    "SPADE ♠️ (System for Prompt Analysis and Delta-based Evaluation) will suggest binary eval functions for your prompt that you can run on all future LLM responses on. It works best when given the version history of your prompt (i.e., through a [LangSmith Hub](https://smith.langchain.com/hub) repo), but you can also use it with a single prompt template."
 )
 
 with st.expander("ℹ️ How it works"):
@@ -72,7 +72,7 @@ if "diff_to_render" not in st.session_state:
     st.session_state.diff_to_render = None
 
 feedback_option = "thumbs"
-option = st.selectbox("Choose Input Type", ["Hub URL", "Prompt Template"])
+option = st.selectbox("Choose Input Type", ["Hub Repo", "Prompt Template"])
 
 
 def list_versions(repo_full_name: str):
@@ -132,7 +132,7 @@ if option == "Prompt Template":
         st.session_state.source = "prompt_template"
 else:
     string1 = st.text_input(
-        "LangSmith Hub Repo", "", placeholder="homanp/superagent"
+        "[LangSmith Hub Repo](https://smith.langchain.com/hub):", "", placeholder="homanp/superagent"
     )
     if string1.strip():
         version = ""
