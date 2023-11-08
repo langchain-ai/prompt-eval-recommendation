@@ -86,14 +86,14 @@ CATEGORIZE_TEMPLATE = """I need your assistance in identifying and categorizing 
 Please focus your analysis on the newly added instructions in the updated prompt template. Use the categories listed below to describe the changes::
 
 - **Structural**:
-  - **Presentation Format**: Have any new specifications been added regarding the expected response format, such as a list, JSON, Markdown, or HTML?
+  - **Format Instruction**: Have any new specifications been added regarding the expected response format, such as a list, JSON, Markdown, or HTML?
   - **Example Demonstration**: Are there any new examples provided to demonstrate the desired response format, including specific headers, keys, or structures?
   - **Prompt Rephrasing (not a new instruction)**: Has the prompt been rephrased slightly to clarify the task, maintaining the same overall semantic meaning?
 
 - **Content**:
   - **Workflow Description**: Have more detailed steps on how to perform the task been newly added?
   - **Data Placeholders**: Have any new data sources or context been inserted in placeholders for the LLM to consider?
-  - **Count**: Have there been new specifications added regarding the number of items of a certain type in the response, such as “at least”, “at most”, or an exact number?
+  - **Quantity Instruction**: Have there been new specifications added regarding the number of items of a certain type in the response, such as “at least”, “at most”, or an exact number?
   - **Inclusion**: Are there new keywords that every future LLM response should now include?
   - **Exclusion**: Have any new keywords been specified that should be excluded from all future LLM responses?
   - **Qualitative Assessment**: Are there new qualitative criteria for assessing good responses, including specific requirements for length, tone, or style?
@@ -103,14 +103,14 @@ Please focus your analysis on the newly added instructions in the updated prompt
 ```json
 {{
   "Structural": {{
-    "PresentationFormat": "Describe new format specifications (if any)",
+    "FormatInstruction": "Describe new format specifications (if any)",
     "ExampleDemonstration": "Describe new example structure (if any)",
     "PromptRephrasing": "Change description (if any)"
   }},
   "Content": {{
     "WorkflowDescription": "Describe added workflow steps (if any)",
     "DataPlaceholders": "Describe added data sources or context (if any)",
-    "Count": "Describe new item count specifications (if any)",
+    "QuantityInstruction": "Describe new item quantity specifications (if any)",
     "Inclusion": "State new keywords for LLM to include in all responses (if any)",
     "Exclusion": "State new keywords for LLM to exclude from all responses (if any)",
     "QualitativeAssessment": "Describe new qualitative criteria of a good LLM response (if any)"
@@ -129,7 +129,7 @@ SUGGEST_EVAL_TEMPLATE = """Please use this JSON structure, detailing the newly a
 3. All evaluation functions should return a binary True or False value.
 4. All evaluation functions should have a descriptive name and comment explaining the purpose of the function.
 5. When creating functions for QualitativeAssesment prompt additions, target the specific criteria added to the prompt rather than creating generic evaluations. For instance, if the criteria specifies a "concise response", the function might check the length of the response and decide whether it's concise. Create a different function for each qualitative criteria, even if there are multiple criteria in the same prompt edit.
-6. Use the following template for each function, only accepting the LLM prompt and response as arguments:
+6. Use the following template for each function, only accepting a formatted LLM prompt (filled with values in the placeholders) and response as arguments:
 
 **Function Signature**:
 ```python
@@ -145,13 +145,13 @@ Below are examples of functions for each type of change you might encounter, bas
 
 **Important Notes:**
 
-- If writing a conditional based on keywords in the prompt, make sure the keywords aren't always present in the prompt template. For instance, if the prompt template always contains the word "wedding", don't write a function that checks if the response contains the word "wedding"--use a phrase like "my wedding" to check in the conditional. 
+- If writing a conditional based on keywords in the formatted prompt, make sure the keywords aren't always present in the prompt template. For instance, if the prompt template always contains the word "wedding", don't write a function that checks if the response contains the word "wedding"--use a phrase like "my wedding" to check in the conditional. 
 - Customize the provided function templates based on the actual criteria specified in the given JSON output of changes. You'll need to adjust the specifics (like the exact phrases or counts) based on the actual criteria I've added to my prompts. Make sure each function has a descriptive name and comment explaining the purpose of the function.
 - Do not create evaluation functions for changes categorized under "PromptRephrasing" or "DataPlaceholders".
 - Ensure that each function serves as a standalone validation tool to run on every response to the prompt. Each function should be correct and complete, and should not rely on other non-library functions to run."""
 
 EXAMPLE_EVALS = {
-    "PresentationFormat": """**Presentation Format**:
+    "FormatInstruction": """**Format Instruction**:
     - If the desired format is JSON:
     ```python
     def evaluate_json_format(prompt: str, response: str) -> bool:
@@ -176,7 +176,7 @@ EXAMPLE_EVALS = {
         return "# First Header" in response and "# Second Header" in response
     ```
     """,
-    "Count": """**Count**:
+    "QuantityInstruction": """**Quantity Instruction**:
     ```python
     def evaluate_num_distinct_words(prompt: str, response: str) -> bool:
         # Suppose responses should contain at least 3 distinct words
@@ -219,7 +219,7 @@ EXAMPLE_EVALS = {
     """,
 }
 
-RENDER_DIFF_TEMPLATE = """Please use this JSON structure, detailing the newly added instructions to the LLM prompt template, to render the second prompt template with the changes highlighted. You should return the same second prompt template, but wrap each identified change based on the JSON structure of changes in its tag. Make sure each change has opening and closing tags (e.g., <PresentationFormat></PresentationFormat>), and that the tagged elements are as constrained as possible. Category tags should not be nested. Your answer should start with <FormattedPromptTemplate> and end with </FormattedPromptTemplate>"""
+RENDER_DIFF_TEMPLATE = """Please use this JSON structure, detailing the newly added instructions to the LLM prompt template, to render the second prompt template with the changes highlighted. You should return the same second prompt template, but wrap each identified change based on the JSON structure of changes in its tag. Make sure each change has opening and closing tags (e.g., <FormatInstruction></FormatInstruction>). Category tags should not be nested. Your answer should start with <FormattedPromptTemplate> and end with </FormattedPromptTemplate>"""
 
 # Hash all prompts into a single string
 combined_content = (
@@ -262,6 +262,9 @@ async def suggest_evals(
     ) as cb:
         # If the templates are the same, return []
         if template_1 == template_2:
+            # Send callback that there is no change
+            characterize_callback("Prompt templates are the same.")
+
             cb.on_chain_end(
                 {
                     "eval_functions": [],
@@ -378,14 +381,7 @@ async def suggest_evals(
 
         except Exception as e:
             logging.error(f"Error rendering diff: {e}")
-            cb.on_chain_end(
-                {
-                    "eval_functions": [],
-                    "messages": messages,
-                    "rendered_diff": None,
-                }
-            )
-            return [], messages, None
+            diff_render_response = None
 
         # If there are no changes, return []
         if not changes_made:
