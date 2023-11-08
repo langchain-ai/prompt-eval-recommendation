@@ -365,3 +365,28 @@ if st.session_state.get("run_ids"):
         on_submit=on_feedback_submit,
         args=[run_ids],
     )
+<<<<<<< HEAD
+=======
+
+    # Show CTA
+    # with st.form("email_for_study_form"):
+    #     st.write(
+    #         "This is an experimental version of SPADE, built in collaboration with UC Berkeley. If you'd like to participate in an interactive prompt engineering study so we can improve the tool, please enter your email below. We will not use your email for any other purpose. For more questions, please contact Shreya Shankar at shreyashankar@berkeley.edu."
+    #     )
+    #     email_address = st.text_input("Email", key="email_address")
+    #     email_submitted = st.form_submit_button("Submit")
+
+    #     if email_submitted:
+    #         if email_address:
+    #             # Log the email address
+    #             email_type_str = "email"
+    #             for run_id in run_ids:
+    #                 client.create_feedback(
+    #                     run_id,
+    #                     email_type_str,
+    #                     comment=email_address,
+    #                 )
+    #             st.success("Thanks for your interest! We'll be in touch.")
+    #         else:
+    #             st.warning("Please enter an email address.")
+>>>>>>> 3db5931 (Last edits from the berkeley side)
