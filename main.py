@@ -146,11 +146,21 @@ def on_feedback_submit(feedback, run_ids):
 
 
 if option == "Prompt Template":
+    # Show something to copy
+    placeholder = "A client ({client_genders}) wants to be styled for {event}. Suggest 5 apparel items for {client_pronoun} to wear. For wedding-related events, don’t suggest any white items unless the client explicitly states that they want to be styled for their wedding. Return your answer as a python list of strings"
+
+    with st.expander("Don't know where to start?", expanded=False):
+        st.markdown(
+            "Copy the placeholder and paste it into the Prompt Template text area below."
+        )
+        st.code(placeholder, language="python")
+
     string1 = st.text_area(
         "Prompt Template",
         "",
-        placeholder="A client ({client_genders}) wants to be styled for {event}. Suggest 5 apparel items for {client_pronoun} to wear. For wedding-related events, don’t suggest any white items unless the client explicitly states that they want to be styled for their wedding. Return your answer as a python list of strings",
+        placeholder=placeholder,
     )
+
     if string1.strip():
         st.session_state.versions = ["", string1]
         st.session_state.source = "prompt_template"
