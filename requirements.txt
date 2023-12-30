@@ -7,3 +7,4 @@ streamlit_feedback
 openai<1
 tiktoken
 python-dotenv
+nltk
