@@ -1,4 +1,4 @@
-langchain==0.0.331
+langchain==0.0.353
 langchainhub
 clipboard
 streamlit>=1.27
@@ -7,3 +7,4 @@ streamlit_feedback
 openai<1
 tiktoken
 python-dotenv
+nltk
