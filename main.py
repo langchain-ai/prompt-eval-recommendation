@@ -26,6 +26,7 @@ color_mapping = {
     "Inclusion": "#CCFF99",  # Light Lime
     "Exclusion": "#FF99CC",  # Light Pink
     "QualitativeAssessment": "#99CCFF",  # Light Blue Gray
+    "Other": "#E5E5E5",  # Light Gray
 }
 
 ignore_tags = ["PromptRephrasing", "DataPlaceholders"]
@@ -38,6 +39,7 @@ tooltip_descriptors = {
     "Inclusion": "This type of delta specifies that some key words or phrases must be included in a response.",
     "Exclusion": "This type of delta specifies that some key words or phrases must be excluded from a response.",
     "QualitativeAssessment": "This type of delta introduces subjective or hard-to-evaluate criteria for a good response.",
+    "Other": "This type of delta does not fit into any of the other categories.",
 }
 
 
@@ -45,9 +47,9 @@ def apply_color_styles(prompt_with_tags, color_mapping):
     for tag, color in color_mapping.items():
         if tag in ignore_tags:
             # Replace the tag with nothing
-            prompt_with_tags = prompt_with_tags.replace(
-                f"<{tag}>", ""
-            ).replace(f"</{tag}>", "")
+            prompt_with_tags = prompt_with_tags.replace(f"<{tag}>", "").replace(
+                f"</{tag}>", ""
+            )
 
         else:
             prompt_with_tags = prompt_with_tags.replace(
@@ -64,14 +66,14 @@ st.set_page_config(
     page_icon="🦜️️🛠️ ♠️",
 )
 
-st.subheader("🦜🛠️ ♠️ Get Suggested Evalution Functions")
+st.subheader("🦜🛠️ ♠️ Get Suggested Assertion Functions")
 st.write(
-    "SPADE ♠️ (System for Prompt Analysis and Delta-based Evaluation) will suggest binary eval functions for your prompt that you can run on all future LLM responses on. It works best when given the version history of your prompt (i.e., through a [LangSmith Hub](https://smith.langchain.com/hub) repo), but you can also use it with a single prompt template."
+    "SPADE ♠️ (System for Prompt Analysis and Delta-based Evaluation) will suggest assertions that you can run on all future LLM responses. It works best when given the version history of your prompt (i.e., through a [LangSmith Hub](https://smith.langchain.com/hub) repo), but you can also use it with a single prompt template."
 )
 
 # Include CTA
 st.info(
-    "This is an experimental version of SPADE, built in collaboration with UC Berkeley and used for research purposes. [Here's a link](https://blog.langchain.dev/p/660b0a4c-d89a-48fe-9e49-86f1132d536f/) to our blog post. If you'd like to provide feedback on the quality of evals or participate in an interactive prompt engineering study so we can improve the tool, please fill out [this form](https://forms.gle/ph3Y6nTZWhPn3w8W8)."
+    "This is an experimental version of SPADE, built in collaboration with UC Berkeley and used for research purposes. [Here's a link](https://blog.langchain.dev/p/660b0a4c-d89a-48fe-9e49-86f1132d536f/) to our blog post. If you'd like to provide feedback on the quality of assertions or participate in an interactive prompt engineering study so we can improve the tool, please fill out [this form](https://forms.gle/ph3Y6nTZWhPn3w8W8)."
 )
 
 with st.expander("ℹ️ How it works"):
@@ -101,8 +103,7 @@ option = st.selectbox("Choose Input Type", ["Prompt Template", "Hub Repo"])
 
 def list_versions(repo_full_name: str):
     hashes = [
-        v["commit_hash"]
-        for v in hub_client.list_commits(repo_full_name)["commits"]
+        v["commit_hash"] for v in hub_client.list_commits(repo_full_name)["commits"]
     ]
     return [hash[:7] for hash in hashes]
 
@@ -192,9 +193,7 @@ else:
                 exit()
 
             st.session_state.versions = [
-                prompt.format(
-                    **{k: f"{{{k}}}" for k in prompt.input_variables}
-                )
+                prompt.format(**{k: f"{{{k}}}" for k in prompt.input_variables})
                 for prompt in prompts
             ]
 
@@ -214,16 +213,13 @@ if st.session_state.versions:
 
     # Check if we need to run the main computation
     run_computation = (
-        "eval_functions" not in st.session_state
-        or not st.session_state.eval_functions
+        "eval_functions" not in st.session_state or not st.session_state.eval_functions
     )
 
     if run_computation:
         with collect_runs() as cb:
 
-            def typing_callback(
-                text: Optional[str], agg: list, message_placeholder
-            ):
+            def typing_callback(text: Optional[str], agg: list, message_placeholder):
                 if text is None:
                     # Erase
                     message_placeholder.markdown("")
@@ -275,7 +271,9 @@ if st.session_state.versions:
                     # Save results to session state
                     st.session_state.eval_functions += eval_functions
                     st.session_state.message_history += message_history
-                    if not st.session_state.diff_to_render:
+
+                    # If the last version, save the diff to render
+                    if idx == len(st.session_state.versions[1:]) - 1:
                         st.session_state.diff_to_render = diff_to_render
 
                     # Increment index
@@ -307,7 +305,7 @@ if st.session_state.get("run_ids"):
 
             st_cols = st.columns(2)
 
-            st_cols[0].write("#### Annotated first prompt template")
+            st_cols[0].write("#### Annotated last prompt template")
             st_cols[0].markdown(diff_to_render, unsafe_allow_html=True)
             # Create and display the legend for color mapping
             st_cols[1].write("#### Prompt refinement legend")
@@ -323,47 +321,26 @@ if st.session_state.get("run_ids"):
 
     # Show eval functions
     st.write("#### ♠️ Suggested evaluation functions")
-    all_functions = [
-        "import json\nimport re\nimport numpy as np\nimport pandas as pd"
-    ]
+    all_functions = ["import json\nimport re\nimport numpy as np\nimport pandas as pd"]
     for i, function in enumerate(st.session_state.eval_functions):
-        code_id = (
-            "code_"
-            + hashlib.md5(str(function["code"]).encode()).hexdigest()[:6]
-        )
+        code_id = "code_" + hashlib.md5(str(function).encode()).hexdigest()[:6]
         code_html = f"""
-<pre><code id="{code_id}" class="language-python"># Needs LLM: {function['needs_llm']}
-{function['code']}
+<pre><code id="{code_id}" class="language-python">
+{function}
 </code></pre>
 """
-        all_functions.append(
-            f"# Needs LLM: {function['needs_llm']}\n{function['code']}"
-        )
+        all_functions.append(f"{function}")
         st.markdown(code_html, unsafe_allow_html=True)
 
     # Create a Streamlit button to download the Python file
     st.download_button(
-        label="Download Functions as Python File",
+        label="Download Candidate Assertions as Python File",
         data="\n\n".join(all_functions),
-        file_name="eval_functions.py",
+        file_name="candidate_assertions.py",
         mime="text/plain",
         type="primary",
         on_click=lambda: log_download_event(st.session_state.run_ids),
     )
-
-    # Show full message history
-    with st.expander("GPT-4 message history", expanded=False):
-        # Get the "assistant" messages
-        st.write(
-            "Here are the full GPT-4 responses to (1) categorize the prompt additions and (2) generate evaluation functions."
-        )
-        st.write(
-            [
-                m
-                for m in st.session_state.message_history
-                if m["role"] == "assistant"
-            ]
-        )
 
     run_ids = st.session_state.run_ids
 
